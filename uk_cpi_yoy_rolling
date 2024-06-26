@@ -1,0 +1,55 @@
+import requests
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# Function to fetch data from ONS API using correct endpoint
+def fetch_ons_data(series_id, dataset_id):
+    url = f"https://api.ons.gov.uk/timeseries/{series_id}/dataset/{dataset_id}/data"
+    response = requests.get(url)
+    if response.status_code == 200:
+        return response.json()
+    else:
+        print(f"Failed to fetch data for series {series_id}. Status code: {response.status_code}")
+        return None
+
+# Function to process the JSON data into a DataFrame
+def process_data(data):
+    if data and 'years' in data:
+        records = [{'date': int(item['year']), 'value': pd.to_numeric(item['value'], errors='coerce')} for item in data['years']]
+        return pd.DataFrame(records).set_index('date')
+    return pd.DataFrame()
+
+# Function to add percentage change and rolling median to DataFrame
+def enhance_dataframe(df):
+    df['pct_change'] = df['value'].pct_change()
+    df['median'] = df['pct_change'].rolling(window=10).median()
+    df['Target'] = 0.025
+    return df.drop(columns=['value'])
+
+# Function to plot data
+def plot_data(df, series_id):
+    df_plot = df.loc[df.index > 1999]
+    plt.figure(figsize=(12, 6))
+    plt.bar(df_plot.index, df_plot['pct_change'], label='YoY %', color='grey')
+    plt.plot(df_plot.index, df_plot['median'], label='Median (10yr)', color='blue')
+    plt.plot(df_plot.index, df_plot['Target'], label='Target', color='green')
+    plt.title(f'Inflation YoY % with 10yr trailing median & static 2.5% target')
+    plt.gca().yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: '{:.0%}'.format(x)))
+    plt.text(0.5, -0.08, 'Source: ONS', horizontalalignment='center', verticalalignment='center', transform=plt.gca().transAxes)
+    plt.legend()
+    plt.show()
+
+# Main function to orchestrate the data fetching, processing, and plotting
+def main():
+    datasets = {'d7bt': 'mm23'}
+    for series_id, dataset_id in datasets.items():
+        data = fetch_ons_data(series_id, dataset_id)
+        if data:
+            df = process_data(data)
+            if not df.empty:
+                df = enhance_dataframe(df)
+                plot_data(df, series_id)
+
+# Execute main function
+if __name__ == "__main__":
+    main()
